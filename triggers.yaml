@@ -1,0 +1,3 @@
+triggers:
+  smoke: "* * * * *"
+  regression: "*/2 * * * *"

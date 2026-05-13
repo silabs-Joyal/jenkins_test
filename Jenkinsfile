@@ -3,19 +3,28 @@ pipeline {
 
     stages {
 
-        stage('Parse JOB_NAME') {
+        stage('Initialize') {
             steps {
                 script {
-                    def parts = env.JOB_NAME.tokenize('/')
-                    def n = parts.size()
-                    // n < 2: no stack segment; n < 1: empty JOB_NAME
-                    def testType = n ? parts[-1] : ''
-                    def stackName = n > 1 ? parts[-2] : ''
+                    def segs = env.JOB_NAME.tokenize('/')
+                    def jobType = segs ? segs.last() : ''
 
-                    echo """JOB_NAME: ${env.JOB_NAME}
-                            stackName: ${stackName}
-                            testType: ${testType}
-                         """
+                    def config = readYaml file: 'triggers.yaml'
+                    def cronString = config.triggers[jobType] ?: ''
+                    if (cronString?.trim()) {
+                        properties([
+                            pipelineTriggers([
+                                cron(cronString.trim())
+                            ])
+                        ])
+                    }
+
+                    def n = segs.size()
+                    def stackName = n > 1 ? segs[-2] : ''
+                    echo "JOB_NAME: ${env.JOB_NAME}"
+                    echo "stackName: ${stackName}"
+                    echo "jobType: ${jobType}"
+                    echo "scheduledCron: ${cronString ?: '(none)'}"
                 }
             }
         }
