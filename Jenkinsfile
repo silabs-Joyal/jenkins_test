@@ -3,7 +3,7 @@ pipeline {
 
     stages {
 
-        stage('Get Folder Path') {
+        stage('Parse JOB_NAME') {
             steps {
                 script {
                     def parts = env.JOB_NAME.tokenize('/')
@@ -11,12 +11,10 @@ pipeline {
                     // n < 2: no stack segment; n < 1: empty JOB_NAME
                     def testType = n ? parts[-1] : ''
                     def stackName = n > 1 ? parts[-2] : ''
-                    def folderPath = n > 1 ? parts.init().join('/') : ''
 
                     echo """JOB_NAME: ${env.JOB_NAME}
                             stackName: ${stackName}
                             testType: ${testType}
-                            folderPath: ${folderPath}
                          """
                 }
             }
