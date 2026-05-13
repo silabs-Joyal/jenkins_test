@@ -6,14 +6,18 @@ pipeline {
         stage('Get Folder Path') {
             steps {
                 script {
-                    def fullJobName = env.JOB_NAME
-                    echo "fullJobName: ${fullJobName}"
+                    def parts = env.JOB_NAME.tokenize('/')
+                    def n = parts.size()
+                    // n < 2: no stack segment; n < 1: empty JOB_NAME
+                    def testType = n ? parts[-1] : ''
+                    def stackName = n > 1 ? parts[-2] : ''
+                    def folderPath = n > 1 ? parts.init().join('/') : ''
 
-                    def parts = fullJobName.tokenize('/')
-                    // Top-level jobs have no folder; [0..-2] on a single element throws IndexOutOfBoundsException.
-                    def folderPath = parts.size() > 1 ? parts[0..-2].join('/') : ''
-
-                    echo "Folder path: ${folderPath}"
+                    echo """JOB_NAME: ${env.JOB_NAME}
+                            stackName: ${stackName}
+                            testType: ${testType}
+                            folderPath: ${folderPath}
+                         """
                 }
             }
         }
