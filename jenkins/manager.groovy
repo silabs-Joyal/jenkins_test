@@ -7,7 +7,8 @@
  *   MANAGER_JOBS_ROOT             Optional top-level folder (e.g. silabs_jobs)
  *   MANAGER_GIT_CREDENTIALS_ID    Optional Jenkins credentials id for the Git remote
  *   MANAGER_SCRIPT_PATH           Pipeline script in repo (default: jenkins/tester.groovy)
- *   MANAGER_GIT_BRANCH            Branch spec (default: */main)
+ *   MANAGER_GIT_BRANCH            Branch spec (default: *
+ *                                   /main)
  */
 
 def gitUrl = System.getenv('JENKINS_TEST_GIT_URL') ?: 'https://github.com/silabs-Joyal/jenkins_test.git'
