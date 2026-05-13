@@ -1,106 +1,51 @@
-/**
- * Job DSL seed: mirrors tests/<stack>/<jobType>/ as Folder(stack) + Pipeline job(jobType).
- *
- * Run from a seed job that checks out this repo so WORKSPACE contains ./tests.
- * Layout is discovered via tests//testConfig.yaml (sandbox-safe; avoids java.io.File).
- * Requires Job DSL, pipeline-utility-steps (findFiles), and SCM on the job so checkout scm works.
- *   JENKINS_TEST_GIT_URL          Git remote (override in seed job or controller env)
- *   MANAGER_JOBS_ROOT             Optional top-level folder (e.g. silabs_jobs)
- *   MANAGER_GIT_CREDENTIALS_ID    Optional Jenkins credentials id for the Git remote
- *   MANAGER_SCRIPT_PATH           Pipeline script in repo (default: jenkins/tester.groovy)
- *   MANAGER_GIT_BRANCH            Branch spec (default: *
- *                                   /main)
- */
-
-def gitUrl = System.getenv('JENKINS_TEST_GIT_URL') ?: 'https://github.com/silabs-Joyal/jenkins_test.git'
-def jobsRoot = (System.getenv('MANAGER_JOBS_ROOT') ?: '').trim()
-def credsId = (System.getenv('MANAGER_GIT_CREDENTIALS_ID') ?: '').trim()
-def scriptPath = (System.getenv('MANAGER_SCRIPT_PATH') ?: 'jenkins/tester.groovy').trim()
-def branchSpec = (System.getenv('MANAGER_GIT_BRANCH') ?: '*/main').trim()
+// tests/<stack>/<jobType>/testConfig.yaml -> Job DSL (folder + pipelineJob). Needs jobDsl + findFiles.
 
 node {
+    def gitUrl = env.JENKINS_TEST_GIT_URL ?: 'https://github.com/silabs-Joyal/jenkins_test.git'
+    def top = (env.MANAGER_JOBS_ROOT ?: '').trim()
+    def creds = (env.MANAGER_GIT_CREDENTIALS_ID ?: '').trim()
+    def scriptPath = (env.MANAGER_SCRIPT_PATH ?: 'jenkins/tester.groovy').trim()
+    def branch = (env.MANAGER_GIT_BRANCH ?: '*/main').trim()
+    def q = { s -> s.replace('\\', '\\\\').replace("'", "\\'") }
+
     checkout scm
+    def files = findFiles(glob: 'tests/*/*/testConfig.yaml')
+    if (!files) error('No tests/*/*/testConfig.yaml in workspace.')
 
-    def configs = findFiles(glob: 'tests/*/*/testConfig.yaml')
-    if (!configs) {
-        throw new IllegalStateException(
-            'No tests/<stack>/<jobType>/testConfig.yaml under WORKSPACE. Checkout this repo so ./tests exists.'
-        )
+    def byStack = [:].withDefault { [] as Set }
+    files.each {
+        def p = it.path.replace('\\', '/').split('/')
+        if (p.size() >= 4 && p[0] == 'tests') byStack[p[1]] << p[2]
     }
 
-    def jobSpecs = []
-    def seen = [] as Set
-    configs.each { f ->
-        def norm = f.path.replace('\\', '/')
-        def parts = norm.split('/')
-        if (parts.size() < 4 || parts[0] != 'tests') {
-            return
-        }
-        def stack = parts[1]
-        def jobType = parts[2]
-        def key = "${stack}/${jobType}"
-        if (seen.add(key)) {
-            jobSpecs << [stack: stack, jobType: jobType]
-        }
+    def dsl = new StringBuilder()
+    def emit = { stack, jobType ->
+        dsl << "pipelineJob('${q(jobType)}') {\n"
+        dsl << "  description('${q("tests/${stack}/${jobType}")}')\n"
+        dsl << "  definition {\n    cpsScm {\n      scm {\n        git {\n"
+        dsl << "          remote {\n            url('${q(gitUrl)}')\n"
+        if (creds) dsl << "            credentials('${q(creds)}')\n"
+        dsl << "          }\n          branch('${q(branch)}')\n        }\n      }\n"
+        dsl << "      scriptPath('${q(scriptPath)}')\n      lightweight(false)\n    }\n  }\n}\n"
     }
 
-    def byStack = jobSpecs.groupBy { it.stack }
-
-    if (jobsRoot) {
-        folder(jobsRoot) {
-            byStack.each { stack, items ->
-                folder(stack) {
-                    items.each { spec ->
-                        pipelineJob(spec.jobType) {
-                            description("Managed from tests/${stack}/${spec.jobType}")
-                            definition {
-                                cpsScm {
-                                    scm {
-                                        git {
-                                            remote {
-                                                url(gitUrl)
-                                                if (credsId) {
-                                                    credentials(credsId)
-                                                }
-                                            }
-                                            branch(branchSpec)
-                                        }
-                                    }
-                                    scriptPath(scriptPath)
-                                    lightweight(false)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    if (top) {
+        dsl << "folder('${q(top)}') {\n"
+        byStack.each { stack, jobs ->
+            dsl << "  folder('${q(stack)}') {\n"
+            jobs.each { emit(stack, it) }
+            dsl << "  }\n"
         }
+        dsl << "}\n"
     } else {
-        byStack.each { stack, items ->
-            folder(stack) {
-                items.each { spec ->
-                    pipelineJob(spec.jobType) {
-                        description("Managed from tests/${stack}/${spec.jobType}")
-                        definition {
-                            cpsScm {
-                                scm {
-                                    git {
-                                        remote {
-                                            url(gitUrl)
-                                            if (credsId) {
-                                                credentials(credsId)
-                                            }
-                                        }
-                                        branch(branchSpec)
-                                    }
-                                }
-                                scriptPath(scriptPath)
-                                lightweight(false)
-                            }
-                        }
-                    }
-                }
-            }
+        byStack.each { stack, jobs ->
+            dsl << "folder('${q(stack)}') {\n"
+            jobs.each { emit(stack, it) }
+            dsl << "}\n"
         }
     }
+
+    def out = 'jenkins/.manager-generated-dsl.groovy'
+    writeFile file: out, text: dsl.toString()
+    jobDsl targets: out
 }
