@@ -2,7 +2,8 @@
  * Job DSL seed: mirrors tests/<stack>/<jobType>/ as Folder(stack) + Pipeline job(jobType).
  *
  * Run from a seed job that checks out this repo so WORKSPACE contains ./tests.
- * Requires the Job DSL plugin. Optional env vars:
+ * Layout is discovered via tests//testConfig.yaml (sandbox-safe; avoids java.io.File).
+ * Requires Job DSL and pipeline-utility-steps (findFiles). Optional env vars:
  *   JENKINS_TEST_GIT_URL          Git remote (override in seed job or controller env)
  *   MANAGER_JOBS_ROOT             Optional top-level folder (e.g. silabs_jobs)
  *   MANAGER_GIT_CREDENTIALS_ID    Optional Jenkins credentials id for the Git remote
@@ -17,21 +18,38 @@ def credsId = (System.getenv('MANAGER_GIT_CREDENTIALS_ID') ?: '').trim()
 def scriptPath = (System.getenv('MANAGER_SCRIPT_PATH') ?: 'jenkins/tester.groovy').trim()
 def branchSpec = (System.getenv('MANAGER_GIT_BRANCH') ?: '*/main').trim()
 
-def workspaceRoot = new File(System.getenv('WORKSPACE') ?: '.')
-def testsRoot = new File(workspaceRoot, 'tests')
-if (!testsRoot.isDirectory()) {
-    throw new IllegalStateException("tests/ not found under WORKSPACE: ${testsRoot.absolutePath}")
+def configs = findFiles(glob: 'tests/*/*/testConfig.yaml')
+if (!configs) {
+    throw new IllegalStateException(
+        'No tests/<stack>/<jobType>/testConfig.yaml under WORKSPACE. Checkout this repo so ./tests exists.'
+    )
 }
+
+def jobSpecs = []
+def seen = [] as Set
+configs.each { f ->
+    def norm = f.path.replace('\\', '/')
+    def parts = norm.split('/')
+    if (parts.size() < 4 || parts[0] != 'tests') {
+        return
+    }
+    def stack = parts[1]
+    def jobType = parts[2]
+    def key = "${stack}/${jobType}"
+    if (seen.add(key)) {
+        jobSpecs << [stack: stack, jobType: jobType]
+    }
+}
+
+def byStack = jobSpecs.groupBy { it.stack }
 
 if (jobsRoot) {
     folder(jobsRoot) {
-        testsRoot.eachDir { stackDir ->
-            def stack = stackDir.name
+        byStack.each { stack, items ->
             folder(stack) {
-                stackDir.eachDir { typeDir ->
-                    def jobType = typeDir.name
-                    pipelineJob(jobType) {
-                        description("Managed from tests/${stack}/${jobType}")
+                items.each { spec ->
+                    pipelineJob(spec.jobType) {
+                        description("Managed from tests/${stack}/${spec.jobType}")
                         definition {
                             cpsScm {
                                 scm {
@@ -55,13 +73,11 @@ if (jobsRoot) {
         }
     }
 } else {
-    testsRoot.eachDir { stackDir ->
-        def stack = stackDir.name
+    byStack.each { stack, items ->
         folder(stack) {
-            stackDir.eachDir { typeDir ->
-                def jobType = typeDir.name
-                pipelineJob(jobType) {
-                    description("Managed from tests/${stack}/${jobType}")
+            items.each { spec ->
+                pipelineJob(spec.jobType) {
+                    description("Managed from tests/${stack}/${spec.jobType}")
                     definition {
                         cpsScm {
                             scm {
