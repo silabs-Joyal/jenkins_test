@@ -7,8 +7,9 @@ pipeline {
             steps {
                 script {
                     def fullJobName = env.JOB_NAME
-                    def folders = fullJobName.tokenize('/')[0..-2]  // remove job name
-                    def folderPath = folders.join('/')
+                    def parts = fullJobName.tokenize('/')
+                    // Top-level jobs have no folder; [0..-2] on a single element throws IndexOutOfBoundsException.
+                    def folderPath = parts.size() > 1 ? parts[0..-2].join('/') : ''
 
                     echo "Folder path: ${folderPath}"
                 }
