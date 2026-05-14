@@ -2,25 +2,31 @@ pipeline {
     agent any
 
     stages {
-
         stage('Initialize') {
             steps {
+                sh '''
+                    python3 -m venv .venv
+                    . .venv/bin/activate
+                    pip install -q pyyaml
+                '''
                 script {
                     def segs = env.JOB_NAME.tokenize('/')
                     def jobType = segs ? segs.last() : ''
+                    def n = segs.size()
+                    def stackName = n > 1 ? segs[-2] : ''
 
-                    def config = readYaml file: 'triggers.yaml'
-                    def cronString = config.triggers[jobType] ?: ''
-                    if (cronString?.trim()) {
+                    def cronString = sh(
+                        script: ". .venv/bin/activate && python scripts/cron_from_triggers.py '${stackName}' '${jobType}'",
+                        returnStdout: true
+                    ).trim()
+                    if (cronString) {
                         properties([
                             pipelineTriggers([
-                                cron(cronString.trim())
+                                cron(cronString)
                             ])
                         ])
                     }
 
-                    def n = segs.size()
-                    def stackName = n > 1 ? segs[-2] : ''
                     echo "JOB_NAME: ${env.JOB_NAME}"
                     echo "stackName: ${stackName}"
                     echo "jobType: ${jobType}"

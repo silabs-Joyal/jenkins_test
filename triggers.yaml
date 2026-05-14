@@ -1,3 +1,8 @@
 triggers:
   smoke: "*/2 * * * *"
   regression: "*/5 * * * *"
+
+override:
+  platform:
+    smoke: "*/10 * * * *"
+    regression: "*/15 * * * *"
